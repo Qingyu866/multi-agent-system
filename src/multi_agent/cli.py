@@ -1197,6 +1197,7 @@ def create_parser() -> argparse.ArgumentParser:
     resume_parser.add_argument("--list", action="store_true", help="列出可恢复的项目")
     resume_parser.add_argument("--check", action="store_true", help="检查项目恢复状态")
     resume_parser.add_argument("--status", action="store_true", help="显示项目详细状态")
+    resume_parser.add_argument("--init", action="store_true", help="为现有项目初始化状态文件")
     resume_parser.add_argument("--checkpoint", help="从指定检查点恢复")
     resume_parser.add_argument("--verbose", "-v", action="store_true", help="详细输出")
     
@@ -1452,6 +1453,52 @@ async def handle_resume(args: argparse.Namespace) -> None:
     project_dir = Path(args.project_dir)
     if not project_dir.exists():
         print_colored(f"错误: 项目目录不存在: {project_dir}", Colors.RED)
+        return
+    
+    if args.init:
+        print_header("初始化项目状态")
+        
+        from multi_agent.recovery.scanner import ProjectScanner, ContextSummarizer
+        
+        print_colored(f"扫描项目目录: {project_dir}", Colors.CYAN)
+        
+        scanner = ProjectScanner(str(project_dir))
+        context = scanner.scan()
+        
+        print_colored(f"\n📊 项目扫描结果:", Colors.WHITE)
+        print_colored(f"   项目名称: {context.project_name}", Colors.WHITE)
+        print_colored(f"   文件数: {context.total_files}", Colors.WHITE)
+        print_colored(f"   代码行数: {context.total_lines}", Colors.WHITE)
+        
+        if context.tech_stack:
+            print_colored(f"\n🔧 技术栈:", Colors.WHITE)
+            for category, tech in context.tech_stack.items():
+                print_colored(f"   {category}: {tech}", Colors.WHITE)
+        
+        persistence = StatePersistence(str(project_dir))
+        
+        state = persistence.create_project(
+            project_name=context.project_name,
+            output_dir=str(project_dir),
+            requirements="从现有项目恢复",
+            tech_stack=context.tech_stack,
+        )
+        
+        state.total_tasks = 0
+        state.current_task_index = 0
+        state.status = ProjectStatus.PAUSED
+        persistence.save_state()
+        
+        checkpoint = persistence.create_checkpoint()
+        
+        print_colored(f"\n✅ 项目状态已初始化", Colors.GREEN)
+        print_colored(f"   项目ID: {state.project_id}", Colors.WHITE)
+        print_colored(f"   状态: 已暂停 (可恢复)", Colors.YELLOW)
+        print_colored(f"   状态文件: {project_dir}/.multi_agent_state/project_state.json", Colors.WHITE)
+        print_colored(f"   检查点: {checkpoint.checkpoint_id}", Colors.WHITE)
+        
+        print_colored(f"\n💡 现在可以使用以下命令查看项目状态:", Colors.CYAN)
+        print_colored(f"   multi-agent resume --check {project_dir}", Colors.CYAN)
         return
     
     persistence = StatePersistence(str(project_dir))
