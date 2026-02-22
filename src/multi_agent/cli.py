@@ -1173,6 +1173,32 @@ def create_parser() -> argparse.ArgumentParser:
     config_parser = subparsers.add_parser("config", help="配置管理")
     config_parser.add_argument("action", choices=["show", "models", "validate"])
     
+    resume_parser = subparsers.add_parser(
+        "resume",
+        help="恢复中断的项目",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+示例:
+  # 查看可恢复的项目列表
+  multi-agent resume --list
+  
+  # 检查项目状态
+  multi-agent resume --check ./output/my-project
+  
+  # 恢复项目执行
+  multi-agent resume ./output/my-project
+  
+  # 从指定检查点恢复
+  multi-agent resume ./output/my-project --checkpoint cp_20240101_120000
+        """,
+    )
+    resume_parser.add_argument("project_dir", nargs="?", help="项目目录")
+    resume_parser.add_argument("--list", action="store_true", help="列出可恢复的项目")
+    resume_parser.add_argument("--check", action="store_true", help="检查项目恢复状态")
+    resume_parser.add_argument("--status", action="store_true", help="显示项目详细状态")
+    resume_parser.add_argument("--checkpoint", help="从指定检查点恢复")
+    resume_parser.add_argument("--verbose", "-v", action="store_true", help="详细输出")
+    
     return parser
 
 
@@ -1357,6 +1383,112 @@ async def handle_config(args: argparse.Namespace) -> None:
         print_json({"valid": len(errors) == 0, "errors": errors})
 
 
+async def handle_resume(args: argparse.Namespace) -> None:
+    """Handle the resume command - 恢复中断的项目."""
+    from multi_agent.recovery import (
+        StatePersistence,
+        ErrorRecovery,
+        ProjectResumer,
+        ProjectStatus,
+    )
+    
+    if args.list:
+        print_header("可恢复的项目列表")
+        
+        output_dir = Path("./output")
+        if not output_dir.exists():
+            print_colored("没有找到输出目录", Colors.YELLOW)
+            return
+        
+        resumable_projects = []
+        for project_dir in output_dir.iterdir():
+            if not project_dir.is_dir():
+                continue
+            
+            state_file = project_dir / ".multi_agent_state" / "project_state.json"
+            if not state_file.exists():
+                continue
+            
+            persistence = StatePersistence(str(project_dir))
+            state = persistence.load_state()
+            
+            if state and state.status in [ProjectStatus.INTERRUPTED, ProjectStatus.PAUSED]:
+                resume_info = persistence.get_resume_info()
+                resumable_projects.append({
+                    "path": str(project_dir),
+                    "name": state.project_name,
+                    "status": state.status.value,
+                    "interrupt_reason": resume_info.get("interrupt_reason"),
+                    "current_task": resume_info.get("current_task_index", 0),
+                    "total_tasks": resume_info.get("total_tasks", 0),
+                })
+        
+        if not resumable_projects:
+            print_colored("没有可恢复的项目", Colors.YELLOW)
+            return
+        
+        for proj in resumable_projects:
+            print_colored(f"\n📁 {proj['name']}", Colors.BOLD + Colors.CYAN)
+            print_colored(f"   路径: {proj['path']}", Colors.WHITE)
+            print_colored(f"   状态: {proj['status']}", Colors.YELLOW)
+            print_colored(f"   中断原因: {proj['interrupt_reason'] or '未知'}", Colors.RED)
+            print_colored(f"   进度: {proj['current_task']}/{proj['total_tasks']}", Colors.GREEN)
+        
+        print_colored(f"\n使用 'multi-agent resume <项目路径>' 恢复项目", Colors.CYAN)
+        return
+    
+    if not args.project_dir:
+        print_colored("错误: 请指定项目目录或使用 --list 查看可恢复项目", Colors.RED)
+        return
+    
+    project_dir = Path(args.project_dir)
+    if not project_dir.exists():
+        print_colored(f"错误: 项目目录不存在: {project_dir}", Colors.RED)
+        return
+    
+    persistence = StatePersistence(str(project_dir))
+    recovery = ErrorRecovery(persistence)
+    resumer = ProjectResumer(persistence, recovery)
+    
+    if args.check or args.status:
+        check_result = resumer.check_resumable()
+        
+        print_header(f"项目状态: {check_result.get('project_name', '未知')}")
+        
+        if check_result.get("resumable"):
+            print_colored(f"✅ 可以恢复", Colors.GREEN)
+            print_colored(f"   项目ID: {check_result.get('project_id')}", Colors.WHITE)
+            print_colored(f"   当前任务: {check_result.get('current_task')}/{check_result.get('total_tasks')}", Colors.WHITE)
+            print_colored(f"   已完成: {check_result.get('completed')}", Colors.GREEN)
+            print_colored(f"   待处理: {check_result.get('pending')}", Colors.YELLOW)
+            print_colored(f"   中断原因: {check_result.get('interrupt_reason')}", Colors.RED)
+            print_colored(f"\n💡 恢复提示: {check_result.get('recovery_hint')}", Colors.CYAN)
+        else:
+            print_colored(f"❌ 无法恢复: {check_result.get('reason')}", Colors.RED)
+        
+        return
+    
+    prepare_result = resumer.prepare_resume()
+    
+    if not prepare_result.get("ready"):
+        print_colored(f"无法恢复项目: {prepare_result.get('reason')}", Colors.RED)
+        return
+    
+    print_header(f"恢复项目: {prepare_result['project_name']}")
+    
+    print_colored(f"项目ID: {prepare_result['project_id']}", Colors.WHITE)
+    print_colored(f"从任务 {prepare_result['resume_from_index']} 继续", Colors.YELLOW)
+    print_colored(f"待处理任务: {len(prepare_result['pending_tasks'])} 个", Colors.CYAN)
+    
+    if args.checkpoint:
+        print_colored(f"从检查点恢复: {args.checkpoint}", Colors.YELLOW)
+    
+    print_colored("\n准备恢复项目执行...", Colors.GREEN)
+    print_colored("注意: 完整的恢复功能需要重新运行项目会话", Colors.YELLOW)
+    print_colored(f"\n建议使用以下命令重新运行:", Colors.CYAN)
+    print_colored(f"  multi-agent run --name \"{prepare_result['project_name']}\" -r \"继续之前的任务\"", Colors.WHITE)
+
+
 def main() -> None:
     """Main entry point."""
     parser = create_parser()
@@ -1373,6 +1505,7 @@ def main() -> None:
         "task": handle_task,
         "agent": handle_agent,
         "config": handle_config,
+        "resume": handle_resume,
     }
     
     handler = handlers.get(args.command)
