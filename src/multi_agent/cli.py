@@ -474,82 +474,111 @@ class ProjectSession:
         qa_feedbacks = []
         revision_round = 0
         
-        while revision_round <= max_revision_rounds:
-            if revision_round == 0:
-                dev_response, saved_files = await self._generate_code(
-                    task, context, task_index, dev_response
-                )
-            else:
-                print_agent_message(
-                    AgentRole.CTO,
-                    f"根据QA反馈进行第 {revision_round} 轮修改...",
-                    "progress",
-                )
-                
-                last_qa_feedback = qa_feedbacks[-1] if qa_feedbacks else ""
-                dev_response, saved_files = await self._revise_code(
-                    task, context, task_index, dev_response, last_qa_feedback
-                )
+        try:
+            while revision_round <= max_revision_rounds:
+                try:
+                    if revision_round == 0:
+                        dev_response, saved_files = await self._generate_code(
+                            task, context, task_index, dev_response
+                        )
+                    else:
+                        print_agent_message(
+                            AgentRole.CTO,
+                            f"根据QA反馈进行第 {revision_round} 轮修改...",
+                            "progress",
+                        )
+                        
+                        last_qa_feedback = qa_feedbacks[-1] if qa_feedbacks else ""
+                        dev_response, saved_files = await self._revise_code(
+                            task, context, task_index, dev_response, last_qa_feedback
+                        )
+                    
+                    if self.verbose and dev_response:
+                        self._print_code_preview(dev_response, revision_round + 1)
+                    
+                    print_agent_message(
+                        AgentRole.CTO,
+                        "转发给 QA 进行审查...",
+                        "progress",
+                    )
+                    
+                    qa = self._get_agent(AgentRole.QA_ENGINEER)
+                    
+                    print_colored("\n🔍 QA 工程师正在审查...", Colors.BLUE)
+                    
+                    qa_response = await qa.process_message(AgentMessage(
+                        sender=AgentRole.CTO,
+                        receiver=AgentRole.QA_ENGINEER,
+                        message_type=MessageType.TASK_ASSIGNMENT,
+                        content=f"审查任务: {task.title}\n\n实现预览:\n{dev_response[:2000] if dev_response else 'N/A'}",
+                    ))
+                    
+                    qa_feedbacks.append(qa_response)
+                    
+                    print_agent_message(
+                        AgentRole.QA_ENGINEER,
+                        "审查完成",
+                        "complete",
+                    )
+                    
+                    if self.verbose:
+                        print_colored("\n📋 QA 审查结果:", Colors.BLUE)
+                        print("-" * 40)
+                        print(qa_response[:600] + ("..." if len(qa_response) > 600 else ""))
+                        print("-" * 40)
+                    
+                    needs_revision = self._check_needs_revision(qa_response)
+                    
+                    if not needs_revision:
+                        print_agent_message(
+                            AgentRole.QA_ENGINEER,
+                            "✅ 代码审查通过，无需修改",
+                            "complete",
+                        )
+                        break
+                    
+                    if revision_round >= max_revision_rounds:
+                        print_agent_message(
+                            AgentRole.CEO,
+                            f"已达到最大修改轮次 ({max_revision_rounds})，继续下一任务",
+                            "warning",
+                        )
+                        break
+                    
+                    print_agent_message(
+                        AgentRole.QA_ENGINEER,
+                        f"⚠️ 发现需要修改的问题，将进行第 {revision_round + 1} 轮修改",
+                        "warning",
+                    )
+                    
+                    revision_round += 1
+                    
+                except Exception as e:
+                    error_msg = str(e)
+                    print_agent_message(
+                        AgentRole.CEO,
+                        f"⚠️ 任务执行出错: {error_msg[:100]}",
+                        "error",
+                    )
+                    print_colored(f"\n❌ 任务 '{task.title}' 执行出错: {error_msg}", Colors.RED)
+                    
+                    if "quota" in error_msg.lower():
+                        raise
+                    
+                    print_colored("跳过当前任务，继续下一个任务...", Colors.YELLOW)
+                    return {
+                        "task_id": str(task.id),
+                        "task_title": task.title,
+                        "status": "error",
+                        "error": error_msg,
+                        "saved_files": saved_files,
+                        "revision_rounds": revision_round,
+                    }
             
-            if self.verbose and dev_response:
-                self._print_code_preview(dev_response, revision_round + 1)
-            
-            print_agent_message(
-                AgentRole.CTO,
-                "转发给 QA 进行审查...",
-                "progress",
-            )
-            
-            qa = self._get_agent(AgentRole.QA_ENGINEER)
-            
-            print_colored("\n🔍 QA 工程师正在审查...", Colors.BLUE)
-            
-            qa_response = await qa.process_message(AgentMessage(
-                sender=AgentRole.CTO,
-                receiver=AgentRole.QA_ENGINEER,
-                message_type=MessageType.TASK_ASSIGNMENT,
-                content=f"审查任务: {task.title}\n\n实现预览:\n{dev_response[:2000] if dev_response else 'N/A'}",
-            ))
-            
-            qa_feedbacks.append(qa_response)
-            
-            print_agent_message(
-                AgentRole.QA_ENGINEER,
-                "审查完成",
-                "complete",
-            )
-            
-            if self.verbose:
-                print_colored("\n📋 QA 审查结果:", Colors.BLUE)
-                print("-" * 40)
-                print(qa_response[:600] + ("..." if len(qa_response) > 600 else ""))
-                print("-" * 40)
-            
-            needs_revision = self._check_needs_revision(qa_response)
-            
-            if not needs_revision:
-                print_agent_message(
-                    AgentRole.QA_ENGINEER,
-                    "✅ 代码审查通过，无需修改",
-                    "complete",
-                )
-                break
-            
-            if revision_round >= max_revision_rounds:
-                print_agent_message(
-                    AgentRole.CEO,
-                    f"已达到最大修改轮次 ({max_revision_rounds})，继续下一任务",
-                    "warning",
-                )
-                break
-            
-            print_agent_message(
-                AgentRole.QA_ENGINEER,
-                f"⚠️ 发现需要修改的问题，将进行第 {revision_round + 1} 轮修改",
-                "warning",
-            )
-            
-            revision_round += 1
+        except Exception as e:
+            error_msg = str(e)
+            print_colored(f"\n❌ 开发循环严重错误: {error_msg}", Colors.RED)
+            raise
         
         print_agent_message(
             AgentRole.CEO,
@@ -866,15 +895,31 @@ QA反馈意见:
             print_progress_bar(completed, total_tasks, "开发进度")
             print()
             
-            result = await self.run_development_cycle(i, interactive)
-            results.append(result)
-            
-            if result.get('saved_files'):
-                all_files.extend(result['saved_files'])
-            
-            total_revisions += result.get('revision_rounds', 0)
-            
-            completed += 1
+            try:
+                result = await self.run_development_cycle(i, interactive)
+                results.append(result)
+                
+                if result.get('saved_files'):
+                    all_files.extend(result['saved_files'])
+                
+                total_revisions += result.get('revision_rounds', 0)
+                
+                completed += 1
+                
+            except Exception as e:
+                error_msg = str(e)
+                print_colored(f"\n❌ 任务 {i+1} 执行失败: {error_msg}", Colors.RED)
+                
+                results.append({
+                    "task_id": str(task.id),
+                    "task_title": task.title,
+                    "status": "error",
+                    "error": error_msg,
+                })
+                
+                if "quota" in error_msg.lower() or "token" in error_msg.lower():
+                    print_colored("\n💡 API 配额不足，保存当前进度...", Colors.YELLOW)
+                    raise
             
             if interactive:
                 print_colored("\n按 Enter 继续下一个任务...", Colors.YELLOW)
@@ -898,11 +943,12 @@ QA反馈意见:
         
         ceo = self._get_agent(AgentRole.CEO)
         
-        final_review = await ceo.process_message(AgentMessage(
-            sender=AgentRole.CTO,
-            receiver=AgentRole.CEO,
-            message_type=MessageType.TASK_ASSIGNMENT,
-            content=f"""请对项目进行最终确认：
+        try:
+            final_review = await ceo.process_message(AgentMessage(
+                sender=AgentRole.CTO,
+                receiver=AgentRole.CEO,
+                message_type=MessageType.TASK_ASSIGNMENT,
+                content=f"""请对项目进行最终确认：
 
 项目名称: {self.project.name}
 总任务数: {total_tasks}
@@ -916,19 +962,27 @@ QA反馈意见:
 
 回复 "确认通过" 或提出需要修改的问题。
 """,
-        ))
-        
-        print_agent_message(
-            AgentRole.CEO,
-            "最终确认完成",
-            "complete",
-        )
-        
-        if self.verbose:
-            print_colored("\n📋 CEO 最终确认:", Colors.MAGENTA)
-            print("-" * 40)
-            print(final_review[:400] + ("..." if len(final_review) > 400 else ""))
-            print("-" * 40)
+            ))
+            
+            print_agent_message(
+                AgentRole.CEO,
+                "最终确认完成",
+                "complete",
+            )
+            
+            if self.verbose:
+                print_colored("\n📋 CEO 最终确认:", Colors.MAGENTA)
+                print("-" * 40)
+                print(final_review[:400] + ("..." if len(final_review) > 400 else ""))
+                print("-" * 40)
+        except Exception as e:
+            error_msg = str(e)
+            print_colored(f"\n⚠️ 最终确认失败: {error_msg}", Colors.YELLOW)
+            print_colored("项目代码已完成，跳过最终确认步骤", Colors.YELLOW)
+            final_review = f"确认跳过（错误: {error_msg[:100]}）"
+            
+            if "quota" in error_msg.lower() or "token" in error_msg.lower():
+                raise
         
         deployment_files = []
         
