@@ -86,6 +86,8 @@ class ProjectState:
     task_list: list[dict] = field(default_factory=list)
     generated_files: list[str] = field(default_factory=list)
     error_history: list[dict] = field(default_factory=list)
+    interrupt_reason: Optional[str] = None
+    error_message: Optional[str] = None
     
     def to_dict(self) -> dict:
         result = asdict(self)

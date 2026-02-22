@@ -1257,6 +1257,32 @@ def create_parser() -> argparse.ArgumentParser:
     modify_parser.add_argument("--analyze", action="store_true", help="仅分析项目，不修改")
     modify_parser.add_argument("--verbose", "-v", action="store_true", help="详细输出")
     
+    fix_parser = subparsers.add_parser(
+        "fix",
+        help="修复项目问题",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+示例:
+  # 修复中断的项目
+  multi-agent fix ./my-project --resume
+  
+  # 修复代码问题
+  multi-agent fix ./my-project --code
+  
+  # 修复依赖问题
+  multi-agent fix ./my-project --deps
+  
+  # 完整修复
+  multi-agent fix ./my-project --all
+        """,
+    )
+    fix_parser.add_argument("project_dir", help="要修复的项目目录")
+    fix_parser.add_argument("--resume", action="store_true", help="恢复中断的项目")
+    fix_parser.add_argument("--code", action="store_true", help="修复代码问题")
+    fix_parser.add_argument("--deps", action="store_true", help="修复依赖问题")
+    fix_parser.add_argument("--all", action="store_true", help="执行所有修复")
+    fix_parser.add_argument("--verbose", "-v", action="store_true", help="详细输出")
+    
     return parser
 
 
@@ -1368,9 +1394,69 @@ async def handle_run(args: argparse.Namespace) -> None:
             "output_dir": result["output_dir"],
         })
         
+    except KeyboardInterrupt:
+        print_colored("\n\n⚠️ 用户中断了项目执行", Colors.YELLOW)
+        if 'session' in locals() and session:
+            await _save_interrupt_state(session, "user_interrupt", "用户手动中断")
+        print_colored("使用 'multi-agent resume --list' 查看可恢复项目", Colors.CYAN)
+        
     except Exception as e:
-        print_colored(f"\n❌ 错误: {str(e)}", Colors.RED)
+        error_msg = str(e)
+        print_colored(f"\n❌ 错误: {error_msg}", Colors.RED)
+        
+        # 检测错误类型
+        interrupt_reason = "unknown"
+        if "token quota" in error_msg.lower() or "quota" in error_msg.lower():
+            interrupt_reason = "api_quota_exhausted"
+            print_colored("\n💡 API 配额不足，请充值后使用 resume 命令恢复", Colors.CYAN)
+        elif "timeout" in error_msg.lower():
+            interrupt_reason = "timeout"
+            print_colored("\n💡 执行超时，请检查网络后使用 resume 命令恢复", Colors.CYAN)
+        elif "network" in error_msg.lower() or "connection" in error_msg.lower():
+            interrupt_reason = "network_error"
+            print_colored("\n💡 网络错误，请检查网络后使用 resume 命令恢复", Colors.CYAN)
+        
+        # 保存中断状态
+        if 'session' in locals() and session:
+            await _save_interrupt_state(session, interrupt_reason, error_msg)
+            print_colored(f"\n📁 项目状态已保存到: {session.output_dir}/.multi_agent_state/", Colors.GREEN)
+            print_colored("使用以下命令恢复项目:", Colors.CYAN)
+            print_colored(f"  multi-agent resume {session.output_dir}", Colors.WHITE)
+        
         raise
+
+
+async def _save_interrupt_state(session, interrupt_reason: str, error_msg: str) -> None:
+    """保存中断状态"""
+    try:
+        from multi_agent.recovery import StatePersistence, ProjectStatus
+        
+        persistence = StatePersistence(session.output_dir)
+        state = persistence.load_state()
+        
+        if not state:
+            state = persistence.create_project(
+                project_name=session.project_name or "interrupted_project",
+                output_dir=session.output_dir,
+                requirements="中断的项目",
+            )
+        
+        state.status = ProjectStatus.INTERRUPTED
+        state.interrupt_reason = interrupt_reason
+        state.error_message = error_msg[:500] if error_msg else None
+        
+        if hasattr(session, 'task_list'):
+            state.total_tasks = len(session.task_list)
+            state.task_list = session.task_list
+        
+        if hasattr(session, 'current_task_index'):
+            state.current_task_index = session.current_task_index
+        
+        persistence.save_state()
+        persistence.create_checkpoint()
+        
+    except Exception as save_error:
+        print_colored(f"⚠️ 保存状态失败: {save_error}", Colors.YELLOW)
 
 
 async def handle_init(args: argparse.Namespace) -> None:
@@ -1824,6 +1910,116 @@ async def handle_modify(args: argparse.Namespace) -> None:
     print_colored(f'  multi-agent ask "帮我迁移 {project_dir} 项目到Java+MySQL技术栈"', Colors.WHITE)
 
 
+async def handle_fix(args: argparse.Namespace) -> None:
+    """Handle the fix command - 修复项目问题."""
+    from multi_agent.recovery import StatePersistence, ProjectStatus
+    from multi_agent.recovery.scanner import ProjectScanner
+    
+    project_dir = Path(args.project_dir)
+    
+    if not project_dir.exists():
+        print_colored(f"错误: 项目目录不存在: {project_dir}", Colors.RED)
+        return
+    
+    print_header(f"修复项目: {project_dir.name}")
+    
+    # 扫描项目
+    scanner = ProjectScanner(str(project_dir))
+    context = scanner.scan()
+    
+    print_colored(f"\n📊 项目状态:", Colors.WHITE)
+    print_colored(f"   文件数: {context.total_files}", Colors.WHITE)
+    print_colored(f"   代码行数: {context.total_lines}", Colors.WHITE)
+    
+    # 检查状态文件
+    state_file = project_dir / ".multi_agent_state" / "project_state.json"
+    persistence = StatePersistence(str(project_dir))
+    state = persistence.load_state()
+    
+    if state:
+        print_colored(f"\n📁 状态文件存在:", Colors.GREEN)
+        print_colored(f"   项目ID: {state.project_id}", Colors.WHITE)
+        print_colored(f"   状态: {state.status.value}", Colors.WHITE)
+        if state.interrupt_reason:
+            print_colored(f"   中断原因: {state.interrupt_reason}", Colors.YELLOW)
+        if state.error_message:
+            print_colored(f"   错误信息: {state.error_message[:100]}...", Colors.RED)
+    else:
+        print_colored(f"\n📁 状态文件不存在", Colors.YELLOW)
+    
+    # 执行修复
+    fix_all = args.all or (not args.resume and not args.code and not args.deps)
+    
+    if args.resume or fix_all:
+        print_colored(f"\n🔧 恢复中断的项目...", Colors.CYAN)
+        
+        if not state:
+            print_colored("   创建新的状态文件...", Colors.WHITE)
+            state = persistence.create_project(
+                project_name=context.project_name,
+                output_dir=str(project_dir),
+                requirements="从修复命令恢复",
+                tech_stack=context.tech_stack,
+            )
+        
+        state.status = ProjectStatus.PAUSED
+        state.interrupt_reason = None
+        state.error_message = None
+        persistence.save_state()
+        persistence.create_checkpoint()
+        
+        print_colored("   ✅ 状态已重置为可恢复", Colors.GREEN)
+        print_colored(f"\n💡 使用以下命令恢复项目:", Colors.CYAN)
+        print_colored(f"   multi-agent resume {project_dir}", Colors.WHITE)
+    
+    if args.code or fix_all:
+        print_colored(f"\n🔧 检查代码问题...", Colors.CYAN)
+        
+        issues = []
+        
+        # 检查常见问题
+        for module in context.modules:
+            for f in module.files:
+                if f.language == "Python":
+                    py_file = project_dir / f.path
+                    if py_file.exists():
+                        try:
+                            with open(py_file, 'r') as file:
+                                content = file.read()
+                            compile(content, f.path, 'exec')
+                        except SyntaxError as e:
+                            issues.append(f"语法错误: {f.path} - {e}")
+        
+        if issues:
+            print_colored(f"   发现 {len(issues)} 个问题:", Colors.YELLOW)
+            for issue in issues[:5]:
+                print_colored(f"   - {issue}", Colors.RED)
+        else:
+            print_colored("   ✅ 未发现明显的代码问题", Colors.GREEN)
+    
+    if args.deps or fix_all:
+        print_colored(f"\n🔧 检查依赖问题...", Colors.CYAN)
+        
+        # 检查依赖文件
+        requirements_txt = project_dir / "requirements.txt"
+        package_json = project_dir / "package.json"
+        pom_xml = project_dir / "pom.xml"
+        
+        if requirements_txt.exists():
+            print_colored("   ✅ 发现 requirements.txt", Colors.GREEN)
+            print_colored("   运行: pip install -r requirements.txt", Colors.WHITE)
+        
+        if package_json.exists():
+            print_colored("   ✅ 发现 package.json", Colors.GREEN)
+            print_colored("   运行: npm install", Colors.WHITE)
+        
+        if pom_xml.exists():
+            print_colored("   ✅ 发现 pom.xml", Colors.GREEN)
+            print_colored("   运行: mvn install", Colors.WHITE)
+    
+    print_colored(f"\n✅ 修复完成!", Colors.GREEN)
+
+
 def main() -> None:
     """Main entry point."""
     parser = create_parser()
@@ -1843,6 +2039,7 @@ def main() -> None:
         "resume": handle_resume,
         "ask": handle_ask,
         "modify": handle_modify,
+        "fix": handle_fix,
     }
     
     handler = handlers.get(args.command)
