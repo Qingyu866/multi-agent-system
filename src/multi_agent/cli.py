@@ -180,7 +180,7 @@ class ProjectSession:
             cli_config = ClaudeCLIConfig(
                 model=config.llm.model,
                 max_tokens=100000,
-                timeout=300,
+                timeout=1800,
                 working_dir=abs_output_dir,
                 auto_save=True,
             )
