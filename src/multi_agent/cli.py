@@ -1123,6 +1123,33 @@ def create_parser() -> argparse.ArgumentParser:
     
     subparsers = parser.add_subparsers(dest="command", help="可用命令")
     
+    # ask 命令 - 简化的智能入口
+    ask_parser = subparsers.add_parser(
+        "ask",
+        help="告诉CEO你的需求，让CEO决定如何执行",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+示例:
+  # 创建新项目
+  multi-agent ask "帮我创建一个在线商城项目，使用Java后端和React前端"
+  
+  # 修改现有项目
+  multi-agent ask "把 ./my-project 的后端从Python改成Java"
+  
+  # 恢复中断的项目
+  multi-agent ask "恢复之前中断的项目"
+  
+  # 添加新功能
+  multi-agent ask "给 ./my-project 添加用户权限管理功能"
+  
+  # 查看项目状态
+  multi-agent ask "查看 ./my-project 的当前状态"
+        """,
+    )
+    ask_parser.add_argument("request", help="你的需求描述")
+    ask_parser.add_argument("--project", "-p", help="指定项目目录（可选）")
+    ask_parser.add_argument("--verbose", "-v", action="store_true", help="详细输出")
+    
     run_parser = subparsers.add_parser(
         "run",
         help="运行新项目",
@@ -1200,6 +1227,35 @@ def create_parser() -> argparse.ArgumentParser:
     resume_parser.add_argument("--init", action="store_true", help="为现有项目初始化状态文件")
     resume_parser.add_argument("--checkpoint", help="从指定检查点恢复")
     resume_parser.add_argument("--verbose", "-v", action="store_true", help="详细输出")
+    
+    modify_parser = subparsers.add_parser(
+        "modify",
+        help="修改现有项目",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+示例:
+  # 修改后端技术栈
+  multi-agent modify ./my-project --backend java --database mysql
+  
+  # 修改前端技术栈
+  multi-agent modify ./my-project --frontend vue
+  
+  # 添加新功能
+  multi-agent modify ./my-project --add-feature "用户权限管理"
+  
+  # 重构代码
+  multi-agent modify ./my-project --refactor --target backend/api
+        """,
+    )
+    modify_parser.add_argument("project_dir", help="要修改的项目目录")
+    modify_parser.add_argument("--backend", help="修改后端技术栈 (java, python, nodejs, go)")
+    modify_parser.add_argument("--frontend", help="修改前端技术栈 (react, vue, angular)")
+    modify_parser.add_argument("--database", help="修改数据库 (mysql, postgresql, mongodb)")
+    modify_parser.add_argument("--add-feature", help="添加新功能")
+    modify_parser.add_argument("--refactor", action="store_true", help="重构代码")
+    modify_parser.add_argument("--target", help="重构目标路径")
+    modify_parser.add_argument("--analyze", action="store_true", help="仅分析项目，不修改")
+    modify_parser.add_argument("--verbose", "-v", action="store_true", help="详细输出")
     
     return parser
 
@@ -1544,6 +1600,156 @@ async def handle_resume(args: argparse.Namespace) -> None:
     print_colored(f"  multi-agent run --name \"{prepare_result['project_name']}\" -r \"继续之前的任务\"", Colors.WHITE)
 
 
+async def handle_ask(args: argparse.Namespace) -> None:
+    """Handle the ask command - CEO智能决策入口."""
+    from multi_agent.recovery.scanner import ProjectScanner, ContextSummarizer
+    import re
+    
+    request = args.request
+    project_dir = args.project
+    
+    print_header("CEO智能分析")
+    print_colored(f"需求: {request}", Colors.CYAN)
+    
+    request_lower = request.lower()
+    
+    # 自动从需求中提取项目目录
+    if not project_dir:
+        path_patterns = [
+            r'[`\'"]?(\./[^\s`\'"]+)[`\'"]?',
+            r'[`\'"]?(\.\./[^\s`\'"]+)[`\'"]?',
+            r'[`\'"]?(/[^\s`\'"]+/[^\s`\'"]+)[`\'"]?',
+        ]
+        for pattern in path_patterns:
+            match = re.search(pattern, request)
+            if match:
+                potential_path = match.group(1)
+                if Path(potential_path).exists():
+                    project_dir = potential_path
+                    print_colored(f"自动检测到项目目录: {project_dir}", Colors.GREEN)
+                    break
+    
+    if project_dir:
+        print_colored(f"项目目录: {project_dir}", Colors.WHITE)
+    
+    print_colored("\n正在分析需求...", Colors.YELLOW)
+    
+    action = None
+    target_project = project_dir
+    
+    if any(kw in request_lower for kw in ["创建", "新建", "开发", "build", "create", "new"]):
+        action = "create"
+    elif any(kw in request_lower for kw in ["修改", "改", "换成", "迁移", "modify", "change", "migrate"]):
+        action = "modify"
+    elif any(kw in request_lower for kw in ["恢复", "继续", "resume", "continue"]):
+        action = "resume"
+    elif any(kw in request_lower for kw in ["添加", "增加", "新增", "add", "feature"]):
+        action = "add_feature"
+    elif any(kw in request_lower for kw in ["状态", "查看", "status", "check", "show"]):
+        action = "status"
+    
+    if action == "create":
+        print_colored("\n📋 分析结果: 创建新项目", Colors.GREEN)
+        print_colored("建议使用以下命令:", Colors.CYAN)
+        print_colored(f'  multi-agent run --name "项目名称" -r "{request}"', Colors.WHITE)
+        
+    elif action == "modify":
+        if not target_project:
+            print_colored("\n⚠️  需要指定项目目录", Colors.YELLOW)
+            print_colored("请使用 --project 参数指定项目目录:", Colors.CYAN)
+            print_colored(f'  multi-agent ask "{request}" --project ./your-project', Colors.WHITE)
+        else:
+            print_colored(f"\n📋 分析结果: 修改项目 {target_project}", Colors.GREEN)
+            
+            scanner = ProjectScanner(target_project)
+            context = scanner.scan()
+            
+            print_colored(f"\n📊 项目当前状态:", Colors.WHITE)
+            print_colored(f"   文件数: {context.total_files}", Colors.WHITE)
+            print_colored(f"   代码行数: {context.total_lines}", Colors.WHITE)
+            print_colored(f"   技术栈: {context.tech_stack}", Colors.WHITE)
+            
+            new_backend = None
+            new_database = None
+            new_frontend = None
+            
+            if "java" in request_lower:
+                new_backend = "java"
+            elif "python" in request_lower:
+                new_backend = "python"
+            elif "node" in request_lower or "nodejs" in request_lower:
+                new_backend = "nodejs"
+            
+            if "mysql" in request_lower:
+                new_database = "mysql"
+            elif "postgres" in request_lower:
+                new_database = "postgresql"
+            elif "mongo" in request_lower:
+                new_database = "mongodb"
+            
+            if "react" in request_lower:
+                new_frontend = "react"
+            elif "vue" in request_lower:
+                new_frontend = "vue"
+            elif "angular" in request_lower:
+                new_frontend = "angular"
+            
+            print_colored(f"\n🔧 检测到的技术栈变更:", Colors.WHITE)
+            if new_backend:
+                print_colored(f"   后端: {context.tech_stack.get('backend', '未知')} → {new_backend}", Colors.YELLOW)
+            if new_database:
+                print_colored(f"   数据库: {context.tech_stack.get('database', '未知')} → {new_database}", Colors.YELLOW)
+            if new_frontend:
+                print_colored(f"   前端: {context.tech_stack.get('frontend', '未知')} → {new_frontend}", Colors.YELLOW)
+            
+            print_colored("\n建议使用以下命令:", Colors.CYAN)
+            cmd_parts = [f"multi-agent modify {target_project}"]
+            if new_backend:
+                cmd_parts.append(f"--backend {new_backend}")
+            if new_database:
+                cmd_parts.append(f"--database {new_database}")
+            if new_frontend:
+                cmd_parts.append(f"--frontend {new_frontend}")
+            print_colored("  " + " ".join(cmd_parts), Colors.WHITE)
+            
+    elif action == "resume":
+        print_colored("\n📋 分析结果: 恢复项目", Colors.GREEN)
+        print_colored("建议使用以下命令:", Colors.CYAN)
+        print_colored("  multi-agent resume --list", Colors.WHITE)
+        if target_project:
+            print_colored(f"  multi-agent resume --check {target_project}", Colors.WHITE)
+            print_colored(f"  multi-agent resume {target_project}", Colors.WHITE)
+            
+    elif action == "add_feature":
+        if not target_project:
+            print_colored("\n⚠️  需要指定项目目录", Colors.YELLOW)
+            print_colored("请使用 --project 参数指定项目目录:", Colors.CYAN)
+            print_colored(f'  multi-agent ask "{request}" --project ./your-project', Colors.WHITE)
+        else:
+            print_colored(f"\n📋 分析结果: 为项目添加新功能", Colors.GREEN)
+            print_colored("建议使用以下命令:", Colors.CYAN)
+            print_colored(f'  multi-agent modify {target_project} --add-feature "{request}"', Colors.WHITE)
+            
+    elif action == "status":
+        if not target_project:
+            print_colored("\n📋 分析结果: 查看可恢复项目列表", Colors.GREEN)
+            print_colored("建议使用以下命令:", Colors.CYAN)
+            print_colored("  multi-agent resume --list", Colors.WHITE)
+        else:
+            print_colored(f"\n📋 分析结果: 查看项目状态", Colors.GREEN)
+            print_colored("建议使用以下命令:", Colors.CYAN)
+            print_colored(f"  multi-agent resume --check {target_project}", Colors.WHITE)
+            print_colored(f"  multi-agent resume --status {target_project}", Colors.WHITE)
+            
+    else:
+        print_colored("\n📋 无法自动识别操作类型", Colors.YELLOW)
+        print_colored("请使用以下命令之一:", Colors.CYAN)
+        print_colored("  multi-agent run --name \"项目名\" -r \"需求\"", Colors.WHITE)
+        print_colored("  multi-agent modify ./project --backend java", Colors.WHITE)
+        print_colored("  multi-agent resume --list", Colors.WHITE)
+        print_colored("  multi-agent ask \"你的需求\" --project ./project", Colors.WHITE)
+
+
 def main() -> None:
     """Main entry point."""
     parser = create_parser()
@@ -1561,6 +1767,7 @@ def main() -> None:
         "agent": handle_agent,
         "config": handle_config,
         "resume": handle_resume,
+        "ask": handle_ask,
     }
     
     handler = handlers.get(args.command)
