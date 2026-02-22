@@ -1396,36 +1396,43 @@ async def handle_resume(args: argparse.Namespace) -> None:
     if args.list:
         print_header("可恢复的项目列表")
         
-        output_dir = Path("./output")
-        if not output_dir.exists():
-            print_colored("没有找到输出目录", Colors.YELLOW)
-            return
-        
+        search_dirs = ["./output", "./test_task_system", "."]
         resumable_projects = []
-        for project_dir in output_dir.iterdir():
-            if not project_dir.is_dir():
+        
+        for search_dir in search_dirs:
+            search_path = Path(search_dir)
+            if not search_path.exists():
                 continue
             
-            state_file = project_dir / ".multi_agent_state" / "project_state.json"
-            if not state_file.exists():
-                continue
-            
-            persistence = StatePersistence(str(project_dir))
-            state = persistence.load_state()
-            
-            if state and state.status in [ProjectStatus.INTERRUPTED, ProjectStatus.PAUSED]:
-                resume_info = persistence.get_resume_info()
-                resumable_projects.append({
-                    "path": str(project_dir),
-                    "name": state.project_name,
-                    "status": state.status.value,
-                    "interrupt_reason": resume_info.get("interrupt_reason"),
-                    "current_task": resume_info.get("current_task_index", 0),
-                    "total_tasks": resume_info.get("total_tasks", 0),
-                })
+            for project_dir in search_path.iterdir():
+                if not project_dir.is_dir():
+                    continue
+                
+                if project_dir.name.startswith(".") or project_dir.name.startswith("__"):
+                    continue
+                
+                state_file = project_dir / ".multi_agent_state" / "project_state.json"
+                if not state_file.exists():
+                    continue
+                
+                persistence = StatePersistence(str(project_dir))
+                state = persistence.load_state()
+                
+                if state and state.status in [ProjectStatus.INTERRUPTED, ProjectStatus.PAUSED]:
+                    resume_info = persistence.get_resume_info()
+                    resumable_projects.append({
+                        "path": str(project_dir),
+                        "name": state.project_name,
+                        "status": state.status.value,
+                        "interrupt_reason": resume_info.get("interrupt_reason"),
+                        "current_task": resume_info.get("current_task_index", 0),
+                        "total_tasks": resume_info.get("total_tasks", 0),
+                    })
         
         if not resumable_projects:
             print_colored("没有可恢复的项目", Colors.YELLOW)
+            print_colored("\n提示: 项目需要有 .multi_agent_state 目录才能恢复", Colors.CYAN)
+            print_colored("      新运行的项目会自动创建状态文件", Colors.CYAN)
             return
         
         for proj in resumable_projects:
