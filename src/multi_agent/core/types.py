@@ -12,15 +12,49 @@ from pydantic import BaseModel, Field
 
 
 class AgentRole(str, Enum):
-    """Agent role definitions following hierarchical structure."""
+    """Agent role definitions following hierarchical structure.
+    
+    层级结构：
+    - 决策层: CEO, ADVISOR
+    - 管理层: CTO
+    - 执行层: 细分开发Agent
+    - 支撑层: QA_ENGINEER, DESIGNER, DOCUMENTATION
+    """
     
     CEO = "ceo"
     ADVISOR = "advisor"
     CTO = "cto"
+    
     DEVELOPER = "developer"
+    
+    FRONTEND_DEVELOPER = "frontend_developer"
+    BACKEND_DEVELOPER = "backend_developer"
+    FULLSTACK_DEVELOPER = "fullstack_developer"
+    MOBILE_DEVELOPER = "mobile_developer"
+    DEVOPS_ENGINEER = "devops_engineer"
+    DATABASE_DEVELOPER = "database_developer"
+    
+    UI_UX_DESIGNER = "ui_ux_designer"
+    
     QA_ENGINEER = "qa_engineer"
-    DESIGNER = "designer"
     DOCUMENTATION = "documentation"
+    
+    @classmethod
+    def get_developer_roles(cls) -> list['AgentRole']:
+        """获取所有开发类角色"""
+        return [
+            cls.FRONTEND_DEVELOPER,
+            cls.BACKEND_DEVELOPER,
+            cls.FULLSTACK_DEVELOPER,
+            cls.MOBILE_DEVELOPER,
+            cls.DEVOPS_ENGINEER,
+            cls.DATABASE_DEVELOPER,
+        ]
+    
+    @classmethod
+    def get_execution_roles(cls) -> list['AgentRole']:
+        """获取所有执行层角色"""
+        return cls.get_developer_roles() + [cls.QA_ENGINEER, cls.UI_UX_DESIGNER]
 
 
 class ModelProvider(str, Enum):

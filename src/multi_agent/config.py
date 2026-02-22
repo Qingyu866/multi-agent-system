@@ -139,8 +139,14 @@ class Config:
             AgentRole.ADVISOR: "ADVISOR",
             AgentRole.CTO: "CTO",
             AgentRole.DEVELOPER: "DEVELOPER",
+            AgentRole.FRONTEND_DEVELOPER: "FRONTEND",
+            AgentRole.BACKEND_DEVELOPER: "BACKEND",
+            AgentRole.FULLSTACK_DEVELOPER: "FULLSTACK",
+            AgentRole.MOBILE_DEVELOPER: "MOBILE",
+            AgentRole.DEVOPS_ENGINEER: "DEVOPS",
+            AgentRole.DATABASE_DEVELOPER: "DATABASE",
             AgentRole.QA_ENGINEER: "QA",
-            AgentRole.DESIGNER: "DESIGNER",
+            AgentRole.UI_UX_DESIGNER: "DESIGNER",
             AgentRole.DOCUMENTATION: "DOCUMENTATION",
         }
         

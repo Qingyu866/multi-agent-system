@@ -45,17 +45,57 @@ class PermissionGuard:
         AgentRole.ADVISOR: [],
         AgentRole.CTO: [
             AgentRole.DEVELOPER,
+            AgentRole.FRONTEND_DEVELOPER,
+            AgentRole.BACKEND_DEVELOPER,
+            AgentRole.FULLSTACK_DEVELOPER,
+            AgentRole.MOBILE_DEVELOPER,
+            AgentRole.DEVOPS_ENGINEER,
+            AgentRole.DATABASE_DEVELOPER,
             AgentRole.QA_ENGINEER,
-            AgentRole.DESIGNER,
+            AgentRole.UI_UX_DESIGNER,
             AgentRole.DOCUMENTATION,
         ],
         AgentRole.DEVELOPER: [
             AgentRole.DOCUMENTATION,
         ],
+        AgentRole.FRONTEND_DEVELOPER: [
+            AgentRole.BACKEND_DEVELOPER,
+            AgentRole.UI_UX_DESIGNER,
+            AgentRole.DOCUMENTATION,
+        ],
+        AgentRole.BACKEND_DEVELOPER: [
+            AgentRole.FRONTEND_DEVELOPER,
+            AgentRole.DATABASE_DEVELOPER,
+            AgentRole.DOCUMENTATION,
+        ],
+        AgentRole.FULLSTACK_DEVELOPER: [
+            AgentRole.FRONTEND_DEVELOPER,
+            AgentRole.BACKEND_DEVELOPER,
+            AgentRole.DATABASE_DEVELOPER,
+            AgentRole.DOCUMENTATION,
+        ],
+        AgentRole.MOBILE_DEVELOPER: [
+            AgentRole.BACKEND_DEVELOPER,
+            AgentRole.UI_UX_DESIGNER,
+            AgentRole.DEVOPS_ENGINEER,
+            AgentRole.DOCUMENTATION,
+        ],
+        AgentRole.DEVOPS_ENGINEER: [
+            AgentRole.BACKEND_DEVELOPER,
+            AgentRole.DATABASE_DEVELOPER,
+            AgentRole.DOCUMENTATION,
+        ],
+        AgentRole.DATABASE_DEVELOPER: [
+            AgentRole.BACKEND_DEVELOPER,
+            AgentRole.DEVOPS_ENGINEER,
+            AgentRole.DOCUMENTATION,
+        ],
         AgentRole.QA_ENGINEER: [
             AgentRole.DOCUMENTATION,
         ],
-        AgentRole.DESIGNER: [
+        AgentRole.UI_UX_DESIGNER: [
+            AgentRole.FRONTEND_DEVELOPER,
+            AgentRole.MOBILE_DEVELOPER,
             AgentRole.DOCUMENTATION,
         ],
         AgentRole.DOCUMENTATION: [],
@@ -81,12 +121,36 @@ class PermissionGuard:
             "contact_designer_directly",
             "modify_requirements",
         ],
+        AgentRole.FRONTEND_DEVELOPER: [
+            "modify_backend_logic",
+            "modify_database",
+            "modify_deployment_config",
+        ],
+        AgentRole.BACKEND_DEVELOPER: [
+            "modify_frontend_code",
+            "modify_deployment_config",
+        ],
+        AgentRole.FULLSTACK_DEVELOPER: [
+            "modify_production_config",
+        ],
+        AgentRole.MOBILE_DEVELOPER: [
+            "modify_backend_logic",
+            "modify_deployment_config",
+        ],
+        AgentRole.DEVOPS_ENGINEER: [
+            "modify_business_logic",
+            "modify_database_schema",
+        ],
+        AgentRole.DATABASE_DEVELOPER: [
+            "modify_business_logic",
+            "modify_api_definition",
+        ],
         AgentRole.QA_ENGINEER: [
             "demand_code_changes",
             "contact_developer_directly",
             "modify_requirements",
         ],
-        AgentRole.DESIGNER: [
+        AgentRole.UI_UX_DESIGNER: [
             "modify_requirements",
             "contact_developer_directly",
             "implement_code",

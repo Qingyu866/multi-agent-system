@@ -94,7 +94,7 @@ class ClaudeCLIConfig:
     cli_path: str = "claude"
     model: str = "claude-sonnet-4-20250514"
     max_tokens: int = 100000
-    timeout: int = 300
+    timeout: int = 1800
     working_dir: Optional[str] = None
     auto_save: bool = True
 

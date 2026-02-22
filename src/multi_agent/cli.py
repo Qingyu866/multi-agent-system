@@ -59,8 +59,14 @@ class Colors:
         AgentRole.ADVISOR: YELLOW,
         AgentRole.CTO: CYAN,
         AgentRole.DEVELOPER: GREEN,
+        AgentRole.FRONTEND_DEVELOPER: GREEN,
+        AgentRole.BACKEND_DEVELOPER: BLUE,
+        AgentRole.FULLSTACK_DEVELOPER: CYAN,
+        AgentRole.MOBILE_DEVELOPER: MAGENTA,
+        AgentRole.DEVOPS_ENGINEER: YELLOW,
+        AgentRole.DATABASE_DEVELOPER: BLUE,
         AgentRole.QA_ENGINEER: BLUE,
-        AgentRole.DESIGNER: RED,
+        AgentRole.UI_UX_DESIGNER: RED,
         AgentRole.DOCUMENTATION: WHITE,
     }
 
@@ -376,13 +382,19 @@ class ProjectSession:
         if not tasks and plan.get("raw_response"):
             tasks = self._extract_tasks_from_response(plan.get("raw_response", ""))
         
+        if isinstance(tasks, dict):
+            tasks = list(tasks.values()) if tasks else []
+        
+        if not isinstance(tasks, list):
+            tasks = [str(tasks)]
+        
         print_agent_message(
             AgentRole.CTO,
             f"根据需求创建了 {len(tasks)} 个任务",
             "complete",
         )
         
-        for i, task_desc in enumerate(tasks[:10], 1):
+        for i, task_desc in enumerate(tasks, 1):
             if isinstance(task_desc, dict):
                 title = task_desc.get("title", task_desc.get("task", str(task_desc)))
             else:
@@ -422,7 +434,7 @@ class ProjectSession:
                 if task and len(task) > 5:
                     tasks.append(task)
         
-        return tasks[:10] if tasks else ["实现核心功能"]
+        return tasks if tasks else ["实现核心功能"]
     
     async def run_development_cycle(
         self,

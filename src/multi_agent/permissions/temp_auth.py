@@ -28,8 +28,10 @@ class TemporaryAuthManager:
         AgentRole.CTO: [
             (AgentRole.DEVELOPER, "direct_qa_access"),
             (AgentRole.DEVELOPER, "direct_designer_access"),
+            (AgentRole.FRONTEND_DEVELOPER, "direct_backend_access"),
+            (AgentRole.BACKEND_DEVELOPER, "direct_frontend_access"),
             (AgentRole.QA_ENGINEER, "direct_developer_access"),
-            (AgentRole.DESIGNER, "direct_developer_access"),
+            (AgentRole.UI_UX_DESIGNER, "direct_developer_access"),
         ],
     }
     
