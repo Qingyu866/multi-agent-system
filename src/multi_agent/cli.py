@@ -1750,6 +1750,80 @@ async def handle_ask(args: argparse.Namespace) -> None:
         print_colored("  multi-agent ask \"你的需求\" --project ./project", Colors.WHITE)
 
 
+async def handle_modify(args: argparse.Namespace) -> None:
+    """Handle the modify command - 修改现有项目."""
+    from multi_agent.recovery.scanner import ProjectScanner, ContextSummarizer
+    from multi_agent.recovery import StatePersistence, ProjectStatus
+    
+    project_dir = Path(args.project_dir)
+    
+    if not project_dir.exists():
+        print_colored(f"错误: 项目目录不存在: {project_dir}", Colors.RED)
+        return
+    
+    print_header(f"修改项目: {project_dir.name}")
+    
+    scanner = ProjectScanner(str(project_dir))
+    context = scanner.scan()
+    
+    print_colored(f"\n📊 项目当前状态:", Colors.WHITE)
+    print_colored(f"   文件数: {context.total_files}", Colors.WHITE)
+    print_colored(f"   代码行数: {context.total_lines}", Colors.WHITE)
+    print_colored(f"   当前技术栈: {context.tech_stack}", Colors.WHITE)
+    
+    changes = []
+    
+    if args.backend:
+        old_backend = context.tech_stack.get("backend", "未知")
+        print_colored(f"\n🔧 后端技术栈变更: {old_backend} → {args.backend}", Colors.YELLOW)
+        changes.append(f"后端: {old_backend} → {args.backend}")
+    
+    if args.frontend:
+        old_frontend = context.tech_stack.get("frontend", "未知")
+        print_colored(f"🔧 前端技术栈变更: {old_frontend} → {args.frontend}", Colors.YELLOW)
+        changes.append(f"前端: {old_frontend} → {args.frontend}")
+    
+    if args.database:
+        old_database = context.tech_stack.get("database", "未知")
+        print_colored(f"🔧 数据库变更: {old_database} → {args.database}", Colors.YELLOW)
+        changes.append(f"数据库: {old_database} → {args.database}")
+    
+    if args.add_feature:
+        print_colored(f"\n➕ 添加新功能: {args.add_feature}", Colors.CYAN)
+        changes.append(f"新功能: {args.add_feature}")
+    
+    if not changes:
+        print_colored("\n⚠️ 没有指定任何修改", Colors.YELLOW)
+        print_colored("请使用以下参数之一:", Colors.CYAN)
+        print_colored("  --backend java|python|nodejs|go", Colors.WHITE)
+        print_colored("  --frontend react|vue|angular", Colors.WHITE)
+        print_colored("  --database mysql|postgresql|mongodb", Colors.WHITE)
+        print_colored("  --add-feature \"功能描述\"", Colors.WHITE)
+        return
+    
+    print_colored(f"\n📋 计划的修改:", Colors.GREEN)
+    for change in changes:
+        print_colored(f"   - {change}", Colors.WHITE)
+    
+    print_colored(f"\n⚠️ 注意: 技术栈迁移是一个复杂的过程", Colors.YELLOW)
+    print_colored("   建议使用以下方式执行:", Colors.CYAN)
+    
+    if args.backend or args.database:
+        new_tech = []
+        if args.backend:
+            new_tech.append(f"后端使用{args.backend}")
+        if args.database:
+            new_tech.append(f"数据库使用{args.database}")
+        
+        tech_desc = "，".join(new_tech)
+        
+        print_colored(f"\n建议使用 run 命令重新生成项目:", Colors.CYAN)
+        print_colored(f'  multi-agent run --name "{project_dir.name}_java" -r "将 {project_dir} 项目迁移到{tech_desc}，保持原有API接口兼容"', Colors.WHITE)
+    
+    print_colored(f"\n或者使用 ask 命令获取更详细的指导:", Colors.CYAN)
+    print_colored(f'  multi-agent ask "帮我迁移 {project_dir} 项目到Java+MySQL技术栈"', Colors.WHITE)
+
+
 def main() -> None:
     """Main entry point."""
     parser = create_parser()
@@ -1768,6 +1842,7 @@ def main() -> None:
         "config": handle_config,
         "resume": handle_resume,
         "ask": handle_ask,
+        "modify": handle_modify,
     }
     
     handler = handlers.get(args.command)
